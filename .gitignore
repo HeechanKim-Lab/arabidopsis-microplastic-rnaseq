@@ -1,0 +1,37 @@
+# Operating System & Filesystem
+.DS_Store
+Thumbs.db
+*.tmp
+*~
+
+# IDEs and Editors
+.vscode/
+*.code-workspace
+.history/
+
+# Antigravity & Tooling Configurations
+.antigravity/
+*.antigravity
+antigravity/
+
+# Raw, Intermediate, and Alignment Sequencing Data
+*.fastq
+*.fastq.gz
+*.sam
+*.bam
+*.bai
+results/
+data/raw/
+indexes/
+
+# StringTie Intermediate Files
+*.gtf
+*.ctab
+mergelist.txt
+
+# R & Python Runtime Caches
+.Rproj.user/
+.Rhistory
+.RData
+__pycache__/
+*.py[cod]
