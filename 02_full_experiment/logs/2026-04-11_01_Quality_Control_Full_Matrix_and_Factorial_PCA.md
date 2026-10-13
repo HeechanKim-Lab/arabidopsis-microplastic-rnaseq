@@ -63,7 +63,7 @@ The colours and symbols come from the lab script:
 * **Symbol shape = pre-incubation time:** circle = day 0, triangle = day 30, square = day 120.
 * **Symbol fill = plastic level:** open = 0%, crossed (⊕, ✡, ⊞) = 1%, filled = 5%.
 
-**The legend text in figures 020–022 ("0% / 1% / 5% Plastic") is incorrect.** The legend colours correspond to the pre-incubation time, not to plastic level, and Root01 contains no 1% libraries. In figure 022 the legend also covers one of the `c5_d120` libraries (it is visible in figure 023).
+**The legend text in the committed figures 020–022 ("0% / 1% / 5% Plastic") is incorrect.** `modules/01_full_matrix_and_subset_pca.R` now draws one legend entry per condition. The legend colours correspond to the pre-incubation time, not to plastic level, and Root01 contains no 1% libraries. In figure 022 the legend also covers one of the `c5_d120` libraries (it is visible in figure 023).
 
 ---
 

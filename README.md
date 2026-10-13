@@ -54,6 +54,43 @@ Datasets analysed:
 
 ### Pilot (`01_pilot_analysis`)
 
+```text
+FASTQ, 6 libraries, paired-end 2 × 100 bp
+(WT: R1-1, R2-1, R3-1; Cond: R1-9, R2-9, R3-9)
+        │
+        ▼
+01  TAIR10 genome: chromosome renaming, GFF3 → GTF, HISAT2 index
+        │
+        ▼
+02  HISAT2 alignment (--dta)
+        │
+        ▼
+03  samtools sort → StringTie per library (-G TAIR10)
+    → stringtie --merge → gffcompare
+        │
+        ▼
+04  stringtie -e -B on the merged GTF → prepDE.py3 gene counts
+        │
+        ├──────────────► 05  TPM table (descriptive only)
+        ▼
+06–07  edgeR: sample order, filterByExpr, TMM
+        │
+        ▼
+08  PCA on log-CPM (centred, not scaled)
+        │
+        ▼
+09  QLF (6, 5 and 4 libraries) and LRT (6 libraries)
+    → 865 genes with FDR < 0.05 and |log2FC| > 1
+        │
+        ▼
+10  Volcano plot and top-50 heatmap
+        │
+        ▼
+11  StringTie IDs → TAIR loci; GO (BP, MF, CC) and KEGG
+```
+
+The numbers are the scripts in `01_pilot_analysis/modules/`.
+
 1. **Reference:** TAIR10 genome (Ensembl Plants FASTA; chromosome names changed to `Chr1`–`Chr5`, `ChrM`, `ChrC`) and `TAIR10_GFF3_genes.gff`, converted to GTF with `gffread`.
 2. **Alignment:** `hisat2 --dta`.
 3. **Assembly:** `samtools sort`, StringTie per library (`-G`), `stringtie --merge`, and `gffcompare` against TAIR10.
@@ -63,6 +100,33 @@ Datasets analysed:
 7. **Enrichment:** StringTie gene IDs were mapped to TAIR IDs using `t_data.ctab`. GO enrichment used `enrichGO` (org.At.tair.db; BP, MF and CC). KEGG enrichment used `enrichKEGG` (organism `ath`, TAIR IDs).
 
 ### Full experiment (`02_full_experiment`)
+
+```text
+Arabidopsis_plastics_2023.RData (lab): counts for 27 libraries; filterByExpr,
+TMM and estimateDisp per dataset in the lab script; design ~0 + group
+                         │
+          ┌──────────────┴──────────────┐
+          ▼                             ▼
+Root00: 27 libraries             Root01: 12 libraries
+0, 1, 5% plastic                 0, 5% plastic
+× 0, 30, 120 days                × 0, 120 days
+          │                             │
+          └──────────────┬──────────────┘
+                         ▼
+01  PCA on TMM log-CPM (centred and scaled)
+                         │
+                         ▼
+02  GLM likelihood ratio tests for the contrasts; gene counts, Venn diagrams
+                         │
+                         ▼
+03  Volcano plot and heatmaps of the Root01 interaction genes
+04  GO and KEGG: interaction genes; day 120 vs day 0 at 5%
+05  PERMANOVA, two-way ANOVA on PC scores, PCA figure (Root01)
+06  Keyword heatmaps: oxidative stress, photosynthesis/plastid
+07  Annotated table of all significant genes
+```
+
+The numbers are the scripts in `02_full_experiment/modules/`.
 
 1. **Input objects (from the lab):** `filterByExpr` and TMM normalisation per dataset, design `~0 + group`, dispersions from `estimateDisp`. Root01 retains 17,560 genes.
 2. **PCA:** `prcomp` on TMM log-CPM values (centred and scaled).
@@ -127,30 +191,34 @@ Datasets analysed:
 ## 6. Limitations
 
 * Three biological replicates per condition. All reported gene lists come from LRTs, which are less conservative than QLF tests at this sample size. No result has been validated by an independent method.
-* The legends of PCA figures 020–022 label the colours as plastic levels, but the colours show the pre-incubation time (see the 2026-04-11 full-experiment log).
-* The figures were produced in interactive R sessions, and the logs record that code. The scripts in `modules/` and `pipeline/` were reorganised afterwards and have not been re-run end to end. Known differences:
-  * the pilot PCA scripts use `scale. = TRUE`, but the figure used unscaled data;
-  * the pilot LRT scripts drop `R1-1_WT`, but the reported list used all six libraries;
-  * the pilot KEGG scripts use Entrez IDs, but the analysis used TAIR IDs;
-  * full-experiment modules 04 and 05 contain lines that do not parse;
-  * module 06 writes different file names from the committed figures.
 
 ---
 
 ## 7. How to run
 
+Input files are not in the repository. Put them in a `data/` folder inside each stage folder:
+
+| Folder | Files |
+| :--- | :--- |
+| `01_pilot_analysis/data/genome/` | `Arabidopsis_thaliana.TAIR10.dna.toplevel.fa`, `TAIR10_GFF3_genes.gff` |
+| `01_pilot_analysis/data/samples/` | the paired FASTQ files (names in `modules/02_hisat2_alignment.sh`) |
+| `02_full_experiment/data/` | `Arabidopsis_plastics_2023.RData`, `Arabidopsis_genes_description.xlsx` |
+
 ```bash
 # Pilot
 cd 01_pilot_analysis
-./pipeline/run_upstream_tuxedo.sh      # bash >= 4; uses BSD sed (macOS)
-Rscript pipeline/run_downstream_pilot.R
+bash pipeline/run_upstream_tuxedo.sh       # modules 01-04: HISAT2, StringTie, prepDE.py3
+Rscript pipeline/run_downstream_pilot.R    # modules 05-11: edgeR, figures, GO/KEGG
 
-# Full experiment (needs Arabidopsis_plastics_2023.RData and Arabidopsis_genes_description.xlsx)
+# Full experiment
 cd ../02_full_experiment
-Rscript pipeline/run_full_experiment.R
+Rscript pipeline/run_full_experiment.R     # modules 01-07
 ```
 
-Each step can also be run on its own from `modules/`. Intermediate objects are saved to and read from `results/intermediate/*.rds`. See Limitations before using the scripts to reproduce the figures.
+* The pipeline scripts run the modules in order. A module can also be run on its own once the modules before it have run, because intermediate objects are saved in `results/intermediate/`.
+* Figures are written to `assets/` under the names used in the logs, so a run overwrites the committed figures. Tables go to `results/`. Figure 032 was drawn outside R; module 02 writes its numbers to `results/tables/root01_venn_counts.txt`.
+* The GO and KEGG steps need `org.At.tair.db`, and KEGG needs an internet connection. The PERMANOVA uses random permutations without a fixed seed, so its p-values can differ slightly between runs.
+* Upstream thread counts can be changed with `THREADS=<n>`.
 
 ---
 
@@ -170,6 +238,8 @@ Each step can also be run on its own from `modules/`. Intermediate objects are s
     ├── modules/    # 01_full_matrix_and_subset_pca.R … 07_master_annotation_registry.R
     └── pipeline/   # run_full_experiment.R
 ```
+
+The `data/` and `results/` folders inside each stage folder are created locally and are not tracked by git.
 
 ---
 

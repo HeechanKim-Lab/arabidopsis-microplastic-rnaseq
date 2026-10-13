@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-15  
 **Stage:** 02_full_experiment  
-**Script:** `modules/05_multivariate_permanova.R` (see the note in Section 5)  
+**Script:** `modules/05_multivariate_permanova.R`  
 **Input:** `TMM_root01_log` (17,560 genes × 12 libraries), `TMM_root01_pca`  
 **Output:** `assets/023_root01_publication_pca_2d.png`, `assets/024_root01_anova_pc1.png`, `assets/025_root01_anova_pc2.png`, `assets/026_root01_anova_pc3.png`
 
@@ -107,9 +107,3 @@ All four conditions share the letter "a" on PC1, PC2 and PC3, meaning that no pa
 * On the individual components, no term reached p < 0.05. The smallest p-values were for Day on PC1 (0.069) and for Day (0.084) and the interaction (0.086) on PC2.
 * In the PC1 boxplot, the day-120 libraries tend to have higher scores. The three `c5_d120` libraries lie close together (PC1 ≈ 50–66), whereas one library each from `c0_d0` and `c5_d0` lies at about −140.
 * With three libraries per condition these tests have limited power.
-
----
-
-## 5. Note on the script
-
-`modules/05_multivariate_permanova.R` has several statements on one line (line 60) and does not run as committed. The code above is what produced the results.

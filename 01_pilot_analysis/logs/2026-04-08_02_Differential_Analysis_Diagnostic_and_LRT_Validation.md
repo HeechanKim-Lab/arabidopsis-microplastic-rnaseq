@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-08  
 **Stage:** 01_pilot_analysis  
-**Script:** `modules/09_differential_analysis_lrt.R` (see the note in Section 6)  
+**Script:** `modules/09_differential_analysis_lrt.R`  
 **Input:** TMM-normalised `DGEList` (`dge`), `counts`, `phenodata`  
 **Output:** `assets/002_pilot_expression_density.png`, `assets/003_pilot_pvalue_histogram_6vs5.png`, LRT results (`res_lrt`) and gene list (`final_sig_genes`)
 
@@ -176,9 +176,3 @@ Both QLF fits show an excess of small p-values. With six libraries, 1,101 genes 
 * With three libraries per group, the QLF test found at most 12 genes at FDR < 0.05, whether or not `R1-1_WT` was included. Removing `R3-9_Cond` as well (two libraries per group) left no significant genes.
 * Both p-value histograms show more small p-values than expected under no effect, so there is a signal that the QLF test does not resolve at this sample size.
 * The LRT on all six libraries gave 932 genes at FDR < 0.05, of which 865 also had |log2FC| > 1. **No library was removed for this list.** Because the LRT is less conservative than the QLF test at n = 3 per group, the 865-gene list is treated as exploratory. It is used in the next two logs (volcano plot, heatmap, GO and KEGG).
-
----
-
-## 6. Note on the script
-
-The analysis above was run interactively. `modules/09_differential_analysis_lrt.R` and `pipeline/run_downstream_pilot.R` fit the LRT on the five libraries without `R1-1_WT`. That differs from the run that produced the 865-gene list (six libraries), so the scripts need to be aligned with this log before they are used to reproduce the result.

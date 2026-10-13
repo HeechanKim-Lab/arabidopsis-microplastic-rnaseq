@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-13  
 **Stage:** 02_full_experiment  
-**Script:** `modules/04_functional_enrichment.R` (see the note in Section 4)  
+**Script:** `modules/04_functional_enrichment.R`  
 **Input:** Root01 LRT results: interaction contrast (146 genes at FDR < 0.05) and day 120 vs day 0 at 5% (`c5_d120 - c5_d0`, 1,240 genes at FDR < 0.05); `org.At.tair.db`  
 **Output:** `assets/034_aging_5p_go_bp.png`, `assets/035_interaction_go_bp.png`, `assets/036_interaction_go_mf.png`, `assets/037_interaction_go_cc.png`, `assets/038_interaction_kegg_top10.png`
 
@@ -83,11 +83,5 @@ The most significant terms are response to nutrient levels and to starvation, re
 ### C. Summary
 
 Both gene sets are enriched for responses to nutrient levels and nitrogen compounds. The interaction genes are also enriched for metal-ion responses and anion/organic-acid transporters. The enrichment results describe these gene lists and have not been tested further.
-
----
-
-## 4. Note on the script
-
-`modules/04_functional_enrichment.R` has two statements on one line (line 70) and does not run as committed. Its KEGG summary also differs from the steps above. The script needs to be aligned with this log.
 
 Next step: PERMANOVA and ANOVA on the Root01 PCA scores (`modules/05_multivariate_permanova.R`).

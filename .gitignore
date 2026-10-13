@@ -22,6 +22,7 @@ antigravity/
 *.bai
 results/
 data/raw/
+data/
 indexes/
 
 # StringTie Intermediate Files

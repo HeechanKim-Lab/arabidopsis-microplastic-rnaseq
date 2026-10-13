@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-11  
 **Stage:** 01_pilot_analysis  
-**Script:** `modules/11_functional_enrichment.R` (see the note in Section 5)  
+**Script:** `modules/11_functional_enrichment.R`  
 **Input:** `final_sig_genes` (865 genes; six-library LRT, FDR < 0.05 and |log2FC| > 1), `ballgown/R1-1_WT/t_data.ctab`, `org.At.tair.db`  
 **Output:** `assets/006_pilot_go_bp_up.png` to `assets/013_pilot_kegg_pathways_down.png`
 
@@ -108,13 +108,7 @@ In all figures, "UP" = higher in WT and "DOWN" = higher in Cond.
 
 ---
 
-## 5. Note on the script
-
-`modules/11_functional_enrichment.R` and `pipeline/run_downstream_pilot.R` pass Entrez IDs to `enrichKEGG`. The analysis that produced figures 012 and 013 passed TAIR IDs, as shown above. The scripts need to be aligned with this log.
-
----
-
-## 6. Pilot summary
+## 5. Pilot summary
 
 * `R1-1_WT` was the main outlier in QC (lowest alignment rate, different count distribution, separate on PC1). It was kept in the final model.
 * QLF tests found at most 12 genes at FDR < 0.05, with or without `R1-1_WT`. The LRT on all six libraries found 932 genes at FDR < 0.05 (865 with |log2FC| > 1), and these were used for the enrichment analysis above.

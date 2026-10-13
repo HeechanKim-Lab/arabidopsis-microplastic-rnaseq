@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-17  
 **Stage:** 02_full_experiment  
-**Script:** `modules/06_targeted_pathways.R` (see the note in Section 5)  
+**Script:** `modules/06_targeted_pathways.R`  
 **Input:** Root01 LRT results (`res01_p120`, `res01_inter`, `res01_aging_p`), `TMM_root01_log`, `Arabidopsis_genes_description.xlsx` (lab annotation table with `Gene_locus`, `Symbol` and `Description`)  
 **Output:** `assets/039_pathway_ros_heatmap.png`, `assets/040_pathway_photosynthesis_heatmap.png`
 
@@ -89,13 +89,7 @@ Genes in the figure: CAO, PSB27, AT2G28660, LHCB4.3, CT-BMY, AT1G45545 and AT5G1
 
 ---
 
-## 5. Note on the script
-
-`modules/06_targeted_pathways.R` saves the figures as `039_targeted_ros_heatmap.png` and `040_targeted_photosynthesis_heatmap.png`. The committed files are named `039_pathway_ros_heatmap.png` and `040_pathway_photosynthesis_heatmap.png`.
-
----
-
-## 6. Summary of the full experiment
+## 5. Summary of the full experiment
 
 * **PCA:** day-120 libraries tend to separate from day-0 libraries; no grouping by plastic level (2026-04-11 log).
 * **DE (LRT, FDR < 0.05):** no plastic effect at day 0 or day 30. At day 120, 48 genes (Root00) and 138 genes (Root01) differed between 5% and 0%. Day 120 vs day 0 changed 1,240 genes in 5% soil and 49 in 0% soil. The interaction gave 99 genes (Root00) and 146 genes (Root01).

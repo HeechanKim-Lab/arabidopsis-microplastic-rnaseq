@@ -1,7 +1,14 @@
 #!/usr/bin/env Rscript
 # ==============================================================================
-# Module: 06_targeted_pathways.R
-# Description: Targeted regex mining and heatmap generation for ROS and Plastid loci
+# Module 06: keyword-selected heatmaps, oxidative stress and photosynthesis/plastid
+#            (log 2026-04-17)
+#
+# Input : results/intermediate/lrt_root01_list.rds (module 02), TMM_root01_log.rds (module 01)
+#         data/Arabidopsis_genes_description.xlsx (lab table: Gene_locus, Symbol, Description)
+#         data/Arabidopsis_plastics_2023.RData (root01_group_02 for the column annotation)
+# Output: assets/039_pathway_ros_heatmap.png, assets/040_pathway_photosynthesis_heatmap.png
+#
+# The genes are chosen by keyword from the significant genes; this is not an enrichment test.
 # ==============================================================================
 
 suppressPackageStartupMessages({
@@ -11,75 +18,59 @@ suppressPackageStartupMessages({
     library(dplyr)
 })
 
-base_dir   <- normalizePath(file.path(dirname(commandArgs(trailingOnly = FALSE)[grep("--file=", commandArgs(trailingOnly = FALSE))][1]), ".."))
-data_dir   <- file.path(base_dir, "data")
-inter_dir  <- file.path(base_dir, "results", "intermediate")
-assets_dir <- file.path(base_dir, "assets")
+get_base_dir <- function() {
+    args <- commandArgs(trailingOnly = FALSE)
+    file_arg <- sub("^--file=", "", args[grep("^--file=", args)])
+    if (length(file_arg) == 1) normalizePath(file.path(dirname(file_arg), "..")) else getwd()
+}
+base_dir  <- get_base_dir()
+data_dir  <- file.path(base_dir, "data")
+inter_dir <- file.path(base_dir, "results", "intermediate")
+asset_dir <- file.path(base_dir, "assets")
+dir.create(asset_dir, recursive = TRUE, showWarnings = FALSE)
 
+find_input <- function(name) {
+    for (p in c(file.path(data_dir, name), file.path(getwd(), name))) if (file.exists(p)) return(p)
+    stop("Input not found: ", name, " (expected in ", data_dir, ")")
+}
+load(find_input("Arabidopsis_plastics_2023.RData"))
+anno_file      <- read_excel(find_input("Arabidopsis_genes_description.xlsx"))
 TMM_root01_log <- readRDS(file.path(inter_dir, "TMM_root01_log.rds"))
 lrt_root01     <- readRDS(file.path(inter_dir, "lrt_root01_list.rds"))
 
-rdata_file <- file.path(data_dir, "Arabidopsis_plastics_2023.RData")
-if (!file.exists(rdata_file)) rdata_file <- "Arabidopsis_plastics_2023.RData"
-load(rdata_file)
-
-anno_file <- file.path(data_dir, "Arabidopsis_genes_description.xlsx")
-if (!file.exists(anno_file)) anno_file <- "Arabidopsis_genes_description.xlsx"
-anno_db <- read_excel(anno_file)
-
-# Extract non-redundant union of significant LRT loci across Root01
+# Gene pool: FDR < 0.05 in 5% vs 0% at day 120, the interaction, or day 120 vs day 0 at 5%
+df_p120    <- as.data.frame(topTags(lrt_root01$res01_p120, n = Inf))
+df_inter   <- as.data.frame(topTags(lrt_root01$res01_inter, n = Inf))
+df_aging_p <- as.data.frame(topTags(lrt_root01$res01_aging_p, n = Inf))
 all_lrt_sig <- unique(c(
-    rownames(topTags(lrt_root01$res01_p120, n = Inf)$table[topTags(lrt_root01$res01_p120, n = Inf)$table$FDR < 0.05, ]),
-    rownames(topTags(lrt_root01$res01_inter, n = Inf)$table[topTags(lrt_root01$res01_inter, n = Inf)$table$FDR < 0.05, ]),
-    rownames(topTags(lrt_root01$res01_aging_p, n = Inf)$table[topTags(lrt_root01$res01_aging_p, n = Inf)$table$FDR < 0.05, ])
-))
+    rownames(df_p120[df_p120$FDR < 0.05, ]),
+    rownames(df_inter[df_inter$FDR < 0.05, ]),
+    rownames(df_aging_p[df_aging_p$FDR < 0.05, ])))
+anno_sig <- anno_file %>% filter(Gene_locus %in% all_lrt_sig)
 
-anno_sig <- anno_db %>% filter(Gene_locus %in% all_lrt_sig)
-ann_col  <- data.frame(Group = root01_group_02)
+ann_col <- data.frame(Group = root01_group_02)
 rownames(ann_col) <- colnames(TMM_root01_log)
 
-cat(">>> [06] Mining Oxidative Stress / ROS genes...\n")
-ox_keywords <- "hydrogen peroxide|oxidative|reactive oxygen|peroxidase"
-ox_genes    <- anno_sig %>% filter(grepl(ox_keywords, Description, ignore.case = TRUE))
-
-if (nrow(ox_genes) > 1) {
-    ox_matrix <- TMM_root01_log[ox_genes$Gene_locus, ]
-    rownames(ox_matrix) <- ifelse(is.na(ox_genes$Symbol) | ox_genes$Symbol == "", 
-                                  ox_genes$Gene_locus, ox_genes$Symbol)
-    
-    png(file.path(assets_dir, "039_targeted_ros_heatmap.png"), width = 1200, height = 900, res = 150)
-    pheatmap(ox_matrix, 
-             scale = "row", 
-             annotation_col = ann_col,
-             clustering_distance_rows = "euclidean",
-             clustering_distance_cols = "euclidean",
-             clustering_method = "complete",
-             main = paste("Oxidative Stress Responsiveness (", nrow(ox_genes), " Genes)"),
+keyword_heatmap <- function(keywords, title, out_png) {
+    genes <- anno_sig %>% filter(grepl(keywords, Description, ignore.case = TRUE))
+    cat("[06]", title, ":", nrow(genes), "genes\n")
+    if (nrow(genes) < 2) {
+        message("Fewer than two genes; no heatmap for ", title)
+        return(invisible(NULL))
+    }
+    mat <- TMM_root01_log[genes$Gene_locus, ]
+    # Row labels: gene symbol when available, otherwise the TAIR locus
+    rownames(mat) <- ifelse(is.na(genes$Symbol) | genes$Symbol == "", genes$Gene_locus, genes$Symbol)
+    pheatmap(mat, scale = "row", annotation_col = ann_col,
+             main = paste(title, "(", nrow(genes), " Genes)"),
              color = colorRampPalette(c("blue", "white", "red"))(100),
-             fontsize_row = 9)
-    dev.off()
+             fontsize_row = 8,
+             filename = out_png, width = 8, height = 6)
 }
 
-cat(">>> [06] Mining Photosynthesis / Plastid shift genes...\n")
-photo_keywords <- "photosynthe|chloroplast|photosystem|light-harvesting|thylakoid"
-photo_genes    <- anno_sig %>% filter(grepl(photo_keywords, Description, ignore.case = TRUE))
-
-if (nrow(photo_genes) > 1) {
-    photo_matrix <- TMM_root01_log[photo_genes$Gene_locus, ]
-    rownames(photo_matrix) <- ifelse(is.na(photo_genes$Symbol) | photo_genes$Symbol == "", 
-                                     photo_genes$Gene_locus, photo_genes$Symbol)
-    
-    png(file.path(assets_dir, "040_targeted_photosynthesis_heatmap.png"), width = 1200, height = 900, res = 150)
-    pheatmap(photo_matrix, 
-             scale = "row", 
-             annotation_col = ann_col,
-             clustering_distance_rows = "euclidean",
-             clustering_distance_cols = "euclidean",
-             clustering_method = "complete",
-             main = paste("Photosynthesis & Plastid Shifts (", nrow(photo_genes), " Genes)"),
-             color = colorRampPalette(c("blue", "white", "red"))(100),
-             fontsize_row = 9)
-    dev.off()
-}
-
-cat(">>> [06] Targeted pathway heatmaps generated successfully.\n")
+keyword_heatmap("hydrogen peroxide|oxidative|reactive oxygen|peroxidase",
+                "Oxidative Stress Responsiveness",
+                file.path(asset_dir, "039_pathway_ros_heatmap.png"))
+keyword_heatmap("photosynthe|chloroplast|photosystem|light-harvesting|thylakoid",
+                "Photosynthesis & Plastid Shifts",
+                file.path(asset_dir, "040_pathway_photosynthesis_heatmap.png"))
