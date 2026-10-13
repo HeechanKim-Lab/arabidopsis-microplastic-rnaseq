@@ -1,120 +1,68 @@
-# Upstream Processing: Coordinate Sorting, Transcript Assembly, and Master Transcriptome Merging
-**Date:** March 17, 2026  
-**Project:** arabidopsis-microplastic-rnaseq  
-**Module:** 01_pilot_analysis  
-**Target Assays:** *Arabidopsis thaliana* Root mRNA-seq (TAIR10)  
-**Input Artifacts:** `results/sam/*.sam`, `genome/TAIR10_GFF3_genes.gtf`  
-**Output Artifacts:** `results/bam/*.bam`, `results/gtf/*.gtf`, `results/gtf/mergelist_at.txt`, `results/gtf/at_merged.gtf`  
+# Sorting, Transcript Assembly and Merge
+
+**Date:** 2026-03-17  
+**Stage:** 01_pilot_analysis  
+**Script:** `modules/03_assembly_and_merge.sh`  
+**Input:** one SAM file per library, `genes/TAIR10_GFF3_genes.gtf`  
+**Output:** sorted BAM files, one GTF per library, `mergelist_at.txt`, `at_merged.gtf`
 
 ---
 
-## 1. Methodological & Theoretical Rationale
+## 1. Method
 
-### A. SAM-to-BAM Conversion and Coordinate Sorting
-Spliced read alignments produced by HISAT2 are emitted as text-based Sequence Alignment/Map (SAM) records ordered arbitrarily by read ingestion order. Downstream transcript assemblers require binary, coordinate-sorted inputs:
-* **Storage and I/O Optimization:** The Binary Alignment/Map (BAM) format utilizes Block GZIP Format (BGZF) compression, reducing raw SAM disk footprint by ~75% while permitting random-access decompression.
-* **Coordinate Ordering:** `samtools sort` indexes alignments by reference chromosome identifier and leftmost 5' genomic coordinate. Sorting organizes spliced reads linearly along chromosomes, allowing transcript assemblers to process discrete loci sequentially without caching the entire alignment in memory.
-
-### B. Network Flow-Based Transcript Assembly (StringTie)
-`StringTie` reconstructs transcript models from spliced read alignments using a maximum flow network optimization strategy:
-1. **Splice Graph Construction:** Mapped spliced reads define directed acyclic graphs (splice graphs) where nodes correspond to assembled exons and directed edges correspond to junction reads spanning introns (supported by HISAT2 `XS:A` junction tags).
-2. **Maximum Flow Optimization:** A network flow algorithm calculates the minimum set of non-overlapping transcript paths and estimates their relative abundance (expression levels) that parsimoniously accounts for read depth across the splice graph.
-3. **Reference Guidance (`-G`):** Supplying `TAIR10_GFF3_genes.gtf` guides graph resolution toward annotated gene models while allowing `StringTie` to resolve novel splice junctions, condition-specific isoforms, and previously unannotated transcripts induced by environmental microplastic stress.
-
-### C. Unified Reference Consolidation (`--merge`)
-Transcript assemblies derived from individual replicates (`R1-1_WT` through `R3-9_Cond`) exhibit structural fragmentation: lowly expressed transcripts may assemble partially in one library and fail detection in another.
-* **Non-Redundant Master Reference:** `stringtie --merge` ingests the manifest of all replicate GTFs (`mergelist_at.txt`) and consolidates overlapping, redundant, or fragmented transfrags into a single non-redundant reference transcriptome (`at_merged.gtf`).
-* **Cross-Replicate Uniformity:** Merging across both Wild Type and Conditioned cohorts establishes a synchronized annotation coordinate system. This uniform framework is strictly required for downstream abundance quantification (Ballgown) and differential expression modeling (edgeR), preventing reference bias against condition-specific transcripts.
+* SAM files were converted to coordinate-sorted BAM files with `samtools sort`.
+* Each library was assembled with StringTie, guided by the TAIR10 annotation (`-G`).
+* The six assemblies were merged with `stringtie --merge` into one transcript set (`at_merged.gtf`), which was then used to quantify every library against the same transcript models.
 
 ---
 
-## 2. Execution & Implementation
+## 2. Commands
 
-The assembly workflow was automated using a sequential shell pipeline (`02_assembly_and_merge_20260317.sh`).
-
-### A. Coordinate Sorting via Samtools
-Executed across 6 CPU threads per sample to preserve headroom on the Apple Silicon host:
+### A. Sorting (6 threads)
 
 ```bash
-SAMPLES=(
-    "R1-1_WT"
-    "R2-1_WT"
-    "R3-1_WT"
-    "R1-9_Cond"
-    "R2-9_Cond"
-    "R3-9_Cond"
-)
-
-for NAME in "${SAMPLES[@]}"; do
-    samtools sort -@ 6 -o results/bam/${NAME}.bam results/sam/${NAME}.sam
-done
+samtools sort -@ 6 -o R1-1_WT.bam R1-1_WT.sam
+samtools sort -@ 6 -o R2-1_WT.bam R2-1_WT.sam
+samtools sort -@ 6 -o R3-1_WT.bam R3-1_WT.sam
+samtools sort -@ 6 -o R1-9_Cond.bam R1-9_Cond.sam
+samtools sort -@ 6 -o R2-9_Cond.bam R2-9_Cond.sam
+samtools sort -@ 6 -o R3-9_Cond.bam R3-9_Cond.sam
 ```
 
-### B. Individual Transcript Assembly
-Assembled transcripts for each library against the standardized TAIR10 GTF across 10 threads:
+### B. Assembly per library (10 threads)
 
 ```bash
-for NAME in "${SAMPLES[@]}"; do
-    stringtie -p 10 \
-        -G genome/TAIR10_GFF3_genes.gtf \
-        -o results/gtf/${NAME}.gtf \
-        -l ${NAME} \
-        results/bam/${NAME}.bam
-done
+stringtie -p 10 -G genes/TAIR10_GFF3_genes.gtf -o R1-1_WT.gtf -l R1-1_WT R1-1_WT.bam
+# same command for R2-1_WT, R3-1_WT, R1-9_Cond, R2-9_Cond and R3-9_Cond
 ```
 
-### C. Master Transcriptome Merging
-Compiled the manifest and merged all sample assemblies into a master GTF:
+### C. Merge
 
 ```bash
-cd results/gtf
 ls R*-*_*.gtf > mergelist_at.txt
+stringtie --merge -p 10 -G genes/TAIR10_GFF3_genes.gtf -o at_merged.gtf mergelist_at.txt
+```
 
-stringtie --merge -p 10 \
-    -G ../genome/TAIR10_GFF3_genes.gtf \
-    -o at_merged.gtf \
-    mergelist_at.txt
+`mergelist_at.txt` lists the six assemblies: `R1-1_WT.gtf`, `R2-1_WT.gtf`, `R3-1_WT.gtf`, `R1-9_Cond.gtf`, `R2-9_Cond.gtf` and `R3-9_Cond.gtf`.
+
+A known locus was checked in the annotation as a spot test:
+
+```bash
+grep "AT1G01010" TAIR10_GFF3_genes.gtf
 ```
 
 ---
 
-## 3. Structural Validation & Assembly Inventory
+## 3. Merged transcript set
 
-Integrity checks were performed on intermediate manifest files and the consolidated transcriptome `at_merged.gtf`.
+Counts from the `gffcompare` summary (see the 2026-03-18 log):
 
-### A. Manifest Verification
-Inspection of `mergelist_at.txt` confirmed that all 6 biological replicates across experimental groups were included:
-* `R1-1_WT.gtf` (Control Replicate 1)
-* `R2-1_WT.gtf` (Control Replicate 2)
-* `R3-1_WT.gtf` (Control Replicate 3)
-* `R1-9_Cond.gtf` (Conditioned Replicate 1)
-* `R2-9_Cond.gtf` (Conditioned Replicate 2)
-* `R3-9_Cond.gtf` (Conditioned Replicate 3)
+| Item | Count |
+| :--- | ---: |
+| Libraries merged | 6 (3 WT, 3 Cond) |
+| Transcripts | 52,665 |
+| Loci | 32,482 |
+| Multi-exon transcripts | 40,937 |
+| Loci with more than one transcript | 9,530 (~1.6 transcripts per locus) |
 
-### B. Canonical Locus Validation
-Verified the retention and structural preservation of representative canonical genes (e.g., *AT1G01010*):
-
-```bash
-grep "AT1G01010" genome/TAIR10_GFF3_genes.gtf
-```
-
-### C. Assembly Output Metrics
-Total transcript counts in the merged reference were audited using string matching:
-
-```bash
-grep -c "transcript" results/gtf/at_merged.gtf
-```
-
-| Metric Category | Count / Value | Description |
-| :--- | :--- | :--- |
-| **Input Assembly Models** | 6 libraries | 3 Wild Type + 3 Conditioned |
-| **Consolidated Transcripts** | 52,665 mRNAs | Total assembled isoforms (annotated + candidate novel) |
-| **Consolidated Loci** | 32,482 loci | Unique transcribed genomic loci |
-| **Multi-Exon Transcripts** | 40,937 transcripts | Spliced transcript structures |
-| **Multi-Transcript Loci** | 9,530 loci | Complex loci exhibiting alternative isoform usage (~1.6 transcripts/locus) |
-
----
-
-## 4. Pipeline Status
-
-Transcript assembly and master reference consolidation are complete. The output master transcriptome (`at_merged.gtf`) is staged for structural sensitivity and precision benchmarking against the TAIR10 reference using `gffcompare` (`03_gffcompare_20260318.sh`).
+Next step: comparison of `at_merged.gtf` with the TAIR10 annotation using `gffcompare` (also in `modules/03_assembly_and_merge.sh`).

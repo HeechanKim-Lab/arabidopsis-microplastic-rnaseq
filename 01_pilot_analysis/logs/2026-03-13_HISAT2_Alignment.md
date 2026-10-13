@@ -1,86 +1,62 @@
-# Upstream Processing: Spliced Read Alignment via HISAT2
-**Date:** March 13, 2026  
-**Project:** arabidopsis-microplastic-rnaseq  
-**Module:** 01_pilot_analysis  
-**Target Assays:** *Arabidopsis thaliana* Root mRNA-seq (TAIR10)  
-**Input Artifacts:** `indexes/arabidopsis_index.*.ht2`, `samples/*.fastq.gz`  
-**Output Artifacts:** `results/sam/*.sam`  
+# Read Alignment with HISAT2
+
+**Date:** 2026-03-13  
+**Stage:** 01_pilot_analysis  
+**Script:** `modules/02_hisat2_alignment.sh`  
+**Input:** `indexes/arabidopsis_index.*.ht2`, `samples/*.fastq.gz`  
+**Output:** one SAM file per library
 
 ---
 
-## 1. Methodological & Theoretical Rationale
+## 1. Method
 
-### A. Graph-Based Spliced Read Alignment
-Eukaryotic mRNA sequencing reads derived from mature transcripts span non-contiguous genomic loci due to intron excision. Standard short-read genomic aligners cannot map junction-spanning reads without heavy soft-clipping or alignment dropouts. `HISAT2` solves this using a Hierarchical Graph FM index (HGFM):
-1. **Global Search:** Coordinates global anchoring of read segments using the chromosome-level FM index.
-2. **Local Graph Traversal:** Traverses local index graphs (55,000 regional partitions across the Arabidopsis genome) to resolve canonical (`GT-AG`, `GC-AG`) and non-canonical splice junctions down to single-nucleotide resolution.
+Paired-end reads were aligned to the TAIR10 genome with HISAT2. The `--dta` option reports alignments tailored for transcript assemblers such as StringTie (longer anchors are required for new splice sites), which is the recommended setting before StringTie assembly.
 
-### B. Downstream Transcriptome Assembly Flag (`--dta`)
-The `--dta` (Downstream Transcript Assembly) argument is strictly required when aligning reads for reconstruction via `StringTie`. When enabled:
-* HISAT2 modifies its dynamic programming scoring penalty to favor spliced alignments that conform to standard donor/acceptor intron models.
-* HISAT2 writes specialized auxiliary SAM tags:
-  * `XS:A:[+|-]`: Reports the biological transcription strand of the spliced intron based on canonical dinucleotide motifs, critical for unstranded and stranded paired-end library resolution.
-  * Adjusts read alignment boundaries to avoid arbitrary mismatches at exon margins, ensuring clean start and end coordinates for graph-based transcript assembly.
+Libraries:
 
-### C. Paired-End Conformance Definitions
-* **Concordant Alignment:** Both mates align to the same chromosome on opposing strands (`FR` orientation) within the expected genomic fragment size distribution (typically $100\text{--}500$ bp insert).
-* **Discordant Alignment:** Both mates align to the genome, but with abnormal insert lengths, inversion orientations, or across different chromosomes (potential structural rearrangements or trans-splicing events).
-* **Mate-Level Alignment:** Mates from pairs that failed paired alignment but where individual single-end mates align independently.
+* **WT (0% plastic control):** `R1-1_WT`, `R2-1_WT`, `R3-1_WT`
+* **Cond (5% plastic, soil pre-incubated for 120 days):** `R1-9_Cond`, `R2-9_Cond`, `R3-9_Cond`
 
 ---
 
-## 2. Execution & Implementation
+## 2. Commands
 
-Alignments were parallelized across 10 execution threads per sample using a Bash driver loop (`01_hisat2_alignment_20260313.sh`).
+One command per library (10 threads), for example:
 
-### Execution Protocol
 ```bash
-hisat2 -p 10 --dta \
-  -x /Users/heechan/Desktop/practice/genome/index/arabidopsis_index \
-  -1 samples/${R1_FASTQ}.fastq.gz \
-  -2 samples/${R2_FASTQ}.fastq.gz \
-  -S results/sam/${SAMPLE_NAME}.sam
+hisat2 -p 10 --dta -x indexes/arabidopsis_index \
+  -1 samples/R1-1_S0_L009_R1_001.fastq.gz \
+  -2 samples/R1-1_S0_L009_R2_001.fastq.gz \
+  -S R1-1_WT.sam
 ```
 
-### Processed Cohorts
-* **Wild Type (0% Plastic Control):** `R1-1_WT`, `R2-1_WT`, `R3-1_WT`
-* **Conditioned (5% Plastic, 120d Pre-incubated Soil):** `R1-9_Cond`, `R2-9_Cond`, `R3-9_Cond`
+The other five libraries were run the same way with their own FASTQ files (`R2-1_S252_L004`, `R3-1_S261_L004`, `R1-9_S251_L004`, `R2-9_S0_L009`, `R3-9_S0_L009`).
 
 ---
 
-## 3. Alignment Statistics & Quality Profiling
+## 3. Alignment summary
 
-All 6 libraries achieved $> 29.0 \times 10^6$ paired reads, delivering sufficient sequencing depth for statistical differential expression analysis.
-
-### Summary Metrics
-
-| Sample ID | Condition | Total Read Pairs | Concordant Unique (%) | Concordant Multi (%) | Discordant (%) | Overall Alignment Rate |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **R1-1_WT** | Control | 29,791,679 | 22,759,510 (76.40%) | 985,658 (3.31%) | 338,280 (5.59%) | **88.56%** |
-| **R2-1_WT** | Control | 30,293,327 | 25,675,061 (84.75%) | 722,235 (2.38%) | 481,753 (12.37%) | **93.35%** |
-| **R3-1_WT** | Control | 29,526,747 | 23,620,211 (80.00%) | 654,169 (2.22%) | 623,511 (11.87%) | **90.88%** |
-| **R1-9_Cond** | Conditioned | 29,061,578 | 24,757,144 (85.19%) | 546,209 (1.88%) | 466,708 (12.42%) | **93.78%** |
-| **R2-9_Cond** | Conditioned | 29,817,819 | 24,251,405 (81.33%) | 600,524 (2.01%) | 604,108 (12.17%) | **91.92%** |
-| **R3-9_Cond** | Conditioned | 29,899,345 | 25,397,944 (84.94%) | 501,403 (1.68%) | 563,225 (14.08%) | **93.72%** |
+| Sample | Group | Read pairs | Concordant 0 times | Concordant, unique | Concordant, multiple | Discordant (% of non-concordant pairs) | Overall alignment |
+| :--- | :--- | ---: | ---: | ---: | ---: | ---: | ---: |
+| R1-1_WT | WT | 29,791,679 | 6,046,511 (20.30%) | 22,759,510 (76.40%) | 985,658 (3.31%) | 338,280 (5.59%) | 88.56% |
+| R2-1_WT | WT | 30,293,327 | 3,896,031 (12.86%) | 25,675,061 (84.75%) | 722,235 (2.38%) | 481,753 (12.37%) | 93.35% |
+| R3-1_WT | WT | 29,526,747 | 5,252,367 (17.79%) | 23,620,211 (80.00%) | 654,169 (2.22%) | 623,511 (11.87%) | 90.88% |
+| R1-9_Cond | Cond | 29,061,578 | 3,758,225 (12.93%) | 24,757,144 (85.19%) | 546,209 (1.88%) | 466,708 (12.42%) | 93.78% |
+| R2-9_Cond | Cond | 29,817,819 | 4,965,890 (16.65%) | 24,251,405 (81.33%) | 600,524 (2.01%) | 604,108 (12.17%) | 91.92% |
+| R3-9_Cond | Cond | 29,899,345 | 3,999,998 (13.38%) | 25,397,944 (84.94%) | 501,403 (1.68%) | 563,225 (14.08%) | 93.72% |
 
 ---
 
-## 4. Technical Diagnostics & Early Outlier Indication
+## 4. Observations
 
-### A. High Alignment Fidelity
-* Five of the six libraries exhibit overall alignment rates $> 90.8\%$, peaking at $93.78\%$ in `R1-9_Cond`. 
-* Uniquely aligned concordant fractions average $> 82\%$, confirming that read quality across the Illumina flow cell was high and that reference genome indexing (`TAIR10`) correctly synchronized chromosome headers.
-* Low multi-mapping rates ($\le 3.31\%$) demonstrate high specificity, confirming that paralogous gene families and repetitive transposable elements in the Arabidopsis genome do not generate ambiguous read allocations.
-
-### B. Anomaly Detection: `R1-1_WT`
-Sample `R1-1_WT` displays noticeable technical divergence from the remaining cohort:
-* **Suppressed Alignment Rate:** Overall alignment drops to **88.56%** (2.32% to 5.22% lower than all other samples).
-* **Concordance Deficit:** Unique concordant rate drops to **76.40%** (compared to $80.00\%\text{--}85.19\%$ in the other five replicates), with $20.30\%$ of pairs failing initial concordant placement.
-* **Diagnostic Check:** While $88.56\%$ remains viable for standard RNA-seq, this structural divergence represents an upstream indicator of technical variation, anticipating the downstream variance separation observed in exploratory PCA (PC2 outlier).
+* All six libraries have 29.1–30.3 million read pairs.
+* Five libraries have overall alignment rates of 90.88–93.78% and unique concordant rates of 80.00–85.19%.
+* `R1-1_WT` has the lowest overall alignment rate (88.56%) and unique concordant rate (76.40%), and the highest fraction of pairs that did not align concordantly (20.30%; others 12.86–17.79%). This was noted for the QC steps that follow.
+* File names place `R1-1_WT`, `R2-9_Cond` and `R3-9_Cond` in one group (`S0_L009`) and the other three libraries in another (`L004`).
 
 ---
 
-## 5. Execution Logs
+## 5. HISAT2 output
 
 ```text
 --- R1-1_WT ---
@@ -186,8 +162,4 @@ Sample `R1-1_WT` displays noticeable technical divergence from the remaining coh
 93.72% overall alignment rate
 ```
 
----
-
-## 6. Pipeline Status
-
-Spliced alignment completed across all 6 target libraries. Output SAM files are ready for SAM-to-BAM binary compression, coordinate sorting via `samtools`, and transcript assembly via `StringTie` (`02_assembly_and_merge_20260317.sh`).
+Next step: sorting with samtools and transcript assembly with StringTie (`modules/03_assembly_and_merge.sh`).

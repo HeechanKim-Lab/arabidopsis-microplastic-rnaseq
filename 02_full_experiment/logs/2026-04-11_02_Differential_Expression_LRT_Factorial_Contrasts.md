@@ -1,187 +1,143 @@
-# Statistical Modeling: Generalized Linear Model Likelihood Ratio Testing, Factorial Contrast Algebra, and DEG Matrix Partitioning
-**Date:** April 11, 2026  
-**Project:** arabidopsis-microplastic-rnaseq  
-**Module:** 02_full_experiment  
-**Target Assays:** *Arabidopsis thaliana* Root mRNA-seq (TAIR10)  
-**Input Artifacts:** Normalized DGEList objects (`root00_y4`, `root01_y4`), design matrices, metadata registries  
-**Output Artifacts:** `assets/027_deg_contrasts_summary.png`, `assets/031_venn_root00_static_vs_incubation.png`, `assets/032_venn_root01_factorial.png`, `assets/033_venn_root00_vs_root01_total.png`, tabulated DEG contrast matrices  
+# Likelihood Ratio Tests for the Factorial Contrasts
+
+**Date:** 2026-04-11  
+**Stage:** 02_full_experiment  
+**Script:** `modules/02_lrt_factorial_contrasts.R`  
+**Input:** `root00_y4`, `root01_y4` (dispersions already estimated in the lab script), design matrices `root00_design_01` and `root01_design_01` (`~0 + group`)  
+**Output:** `assets/027_deg_contrasts_summary.png`, `assets/031_venn_root00_static_vs_incubation.png`, `assets/032_venn_root01_factorial.png`, `assets/033_venn_root00_vs_root01_total.png`
 
 ---
 
-## 1. Methodological & Theoretical Rationale
+## 1. Methods
 
-### A. Factorial GLM Parameterization Without Intercept (`~0 + group`)
-In multi-factor RNA-seq experiments involving concentration ($0\%, 1\%, 5\%$) and temporal incubation ($0\text{d}, 30\text{d}, 120\text{d}$), standard corner-point parameterizations with an intercept term complicate linear hypothesis testing across non-baseline comparisons. 
+* **Design:** one coefficient per condition (`~0 + group`), so each comparison is written as a contrast between condition means.
+* **Test:** edgeR GLM likelihood ratio test (`glmFit`, `glmLRT`). With three replicates per condition the LRT is less conservative than the quasi-likelihood F-test, so the gene counts below should be read with that in mind.
+* **Significance:** the counts in Section 3A use FDR < 0.05 only (no fold-change filter). The up/down counts in Section 3B use |log2FC| > 1, P < 0.01 and FDR < 0.05.
 
-To ensure mathematical clarity and prevent coefficient conflation, a group-means model (`~0 + group`) was constructed:
-* Each unique treatment-time combination is parameterized as an independent dummy variable column in the design matrix $X$.
-* The model coefficients $\beta = [\beta_1, \beta_2, \dots, \beta_k]^T$ represent the mean log2-expression levels of each specific experimental condition.
-* Arbitrary linear hypotheses are formulated via contrast vectors $c$:
-  $$H_0: c^T \beta = 0$$
-  This allows testing acute shocks, chronic weathering, baseline aging, and interaction terms directly without re-leveling factors.
+| Contrast | Definition | Datasets |
+| :--- | :--- | :--- |
+| 5% vs 0% at day 0 | `c5_d0 - c0_d0` | Root00, Root01 |
+| 5% vs 0% at day 30 | `c5_d30 - c0_d30` | Root00 |
+| 5% vs 0% at day 120 | `c5_d120 - c0_d120` | Root00, Root01 |
+| 1% vs 0% at day 120 | `c1_d120 - c0_d120` | Root00 |
+| Day 120 vs day 0 at 0% | `c0_d120 - c0_d0` | Root01 |
+| Day 120 vs day 0 at 5% | `c5_d120 - c5_d0` | Root01 |
+| Plastic × incubation interaction | `(c5_d120 - c5_d0) - (c0_d120 - c0_d0)` | Root00 ("Overall Incubation"), Root01 |
 
-### B. Contrast Vector Formulations
-
-#### 1. Acute Shock Contrasts (Day 0)
-Evaluates immediate physiological disruption upon initial exposure to unincubated plastic fragments:
-$$c_{\text{acute}} = \beta_{c5\_d0} - \beta_{c0\_d0}$$
-
-#### 2. Chronic Weathering Contrasts (Day 120)
-Evaluates root transcriptomic perturbation in soil subjected to 120 days of LDPE fragmentation and weathering:
-$$c_{\text{chronic}} = \beta_{c5\_d120} - \beta_{c0\_d120}$$
-
-#### 3. Baseline Physiological Aging (0% Control)
-Measures the normal transcriptomic shift associated with 120-day incubation in unamended control soil:
-$$c_{\text{aging\_ctrl}} = \beta_{c0\_d120} - \beta_{c0\_d0}$$
-
-#### 4. Stress-Induced Aging (5% Plastic)
-Measures the cumulative transcriptomic trajectory in 5% LDPE-amended soil across the 120-day timeline:
-$$c_{\text{aging\_stress}} = \beta_{c5\_d120} - \beta_{c5\_d0}$$
-
-#### 5. Factorial Difference-of-Differences Interaction
-Isolates the non-additive synergy between soil microplastic contamination and soil weathering time:
-$$c_{\text{interaction}} = (\beta_{c5\_d120} - \beta_{c5\_d0}) - (\beta_{c0\_d120} - \beta_{c0\_d0}) = \beta_{c5\_d120} - \beta_{c5\_d0} - \beta_{c0\_d120} + \beta_{c0\_d0}$$
-This interaction contrast subtracts normal background soil aging from the plastic aging trajectory, identifying genes specifically driven by microplastic-soil conditioning rather than temporal drift.
-
-### C. Likelihood Ratio Test vs. Quasi-Likelihood F-Test
-As established during pilot diagnostics, physical sonication of Arabidopsis roots to harvest the rhizosphere microbiome introduces substantial within-group dispersion along PC2. In Quasi-Likelihood modeling (`glmQLFTest`), this mechanical dispersion inflates the denominator of the $F$-statistic, suppressing true biological significance.
-
-The Likelihood Ratio Test (`glmLRT`) evaluates nested models using the deviance statistic:
-$$LR = 2 \left[ \ell(\hat{\beta}_{\text{full}}) - \ell(\hat{\beta}_{\text{reduced}}) \right] \sim \chi^2_1$$
-By referencing test statistics directly against the asymptotic chi-square distribution with 1 degree of freedom, LRT bypasses the quasi-likelihood dispersion penalty and recovers genuine differential expression signatures across the factorial series.
+In Root01 the script also tests `incubation = (c5_d120 - c0_d120) - (c5_d0 - c0_d0)`. This is algebraically the same contrast as the interaction, so it gives the same 146 genes. Figure 027 shows the number twice.
 
 ---
 
-## 2. Computational Implementation in R
+## 2. Code (R)
 
-Modeling was executed using `edgeR` routines (`02_deg_analysis_20260411.R`).
-
-### A. Characteristic Factorial Cohort Modeling (`Root01`, $N = 12$)
 ```R
-# 1. Define factorial group-means design matrix
-root01_group <- factor(root01_metadata_01$group)
-root01_design <- model.matrix(~0 + root01_group)
-colnames(root01_design) <- levels(root01_group)
+# Root00 (27 libraries)
+root00_fit_LRT <- glmFit(root00_y4, root00_design_01)
+contrasts_root00 <- makeContrasts(
+  Plastic_5p_d0   = c5_d0   - c0_d0,
+  Plastic_5p_d30  = c5_d30  - c0_d30,
+  Plastic_5p_d120 = c5_d120 - c0_d120,
+  Plastic_1p_d120 = c1_d120 - c0_d120,
+  Incubation_5p   = (c5_d120 - c5_d0) - (c0_d120 - c0_d0),
+  levels = root00_design_01)
+res00_0d    <- glmLRT(root00_fit_LRT, contrast = contrasts_root00[, "Plastic_5p_d0"])
+res00_30d   <- glmLRT(root00_fit_LRT, contrast = contrasts_root00[, "Plastic_5p_d30"])
+res00_120d  <- glmLRT(root00_fit_LRT, contrast = contrasts_root00[, "Plastic_5p_d120"])
+res00_1p    <- glmLRT(root00_fit_LRT, contrast = contrasts_root00[, "Plastic_1p_d120"])
+res00_inter <- glmLRT(root00_fit_LRT, contrast = contrasts_root00[, "Incubation_5p"])
+sum(topTags(res00_120d, n = Inf)$table$FDR < 0.05)   # and likewise for each contrast
 
-# 2. Empirical Bayes dispersion estimation
-root01_dge <- estimateDisp(root01_y4, root01_design)
+# Root01 (12 libraries)
+root01_fit_LRT <- glmFit(root01_y4, root01_design_01)
+contrasts_root01 <- makeContrasts(
+  p5_d0   = c5_d0   - c0_d0,
+  p5_d120 = c5_d120 - c0_d120,
+  d120_p0 = c0_d120 - c0_d0,
+  d120_p5 = c5_d120 - c5_d0,
+  plastic_5p_120d = (c5_d120 - c5_d0) - (c0_d120 - c0_d0),
+  incubation      = (c5_d120 - c0_d120) - (c5_d0 - c0_d0),
+  levels = root01_design_01)
+res01_p0      <- glmLRT(root01_fit_LRT, contrast = contrasts_root01[, "p5_d0"])
+res01_p120    <- glmLRT(root01_fit_LRT, contrast = contrasts_root01[, "p5_d120"])
+res01_aging_c <- glmLRT(root01_fit_LRT, contrast = contrasts_root01[, "d120_p0"])
+res01_aging_p <- glmLRT(root01_fit_LRT, contrast = contrasts_root01[, "d120_p5"])
+res01_inter   <- glmLRT(root01_fit_LRT, contrast = contrasts_root01[, "plastic_5p_120d"])
+res01_inc     <- glmLRT(root01_fit_LRT, contrast = contrasts_root01[, "incubation"])
 
-# 3. Fit negative binomial generalized linear model
-root01_fit <- glmFit(root01_dge, root01_design)
-
-# 4. Construct linear contrast matrix
-root01_contrasts <- makeContrasts(
-    Acute_Plastic    = c5_d0 - c0_d0,
-    Chronic_Plastic  = c5_d120 - c0_d120,
-    Aging_Control    = c0_d120 - c0_d0,
-    Aging_Plastic    = c5_d120 - c5_d0,
-    Interaction      = (c5_d120 - c5_d0) - (c0_d120 - c0_d0),
-    levels           = root01_design
-)
-
-# 5. Execute Likelihood Ratio Tests across all contrast vectors
-lrt_acute       <- glmLRT(root01_fit, contrast = root01_contrasts[, "Acute_Plastic"])
-lrt_chronic     <- glmLRT(root01_fit, contrast = root01_contrasts[, "Chronic_Plastic"])
-lrt_aging_ctrl  <- glmLRT(root01_fit, contrast = root01_contrasts[, "Aging_Control"])
-lrt_aging_plast <- glmLRT(root01_fit, contrast = root01_contrasts[, "Aging_Plastic"])
-lrt_interaction <- glmLRT(root01_fit, contrast = root01_contrasts[, "Interaction"])
-```
-
-### B. Global Multi-Dose Modeling (`Root00`, $N = 27$)
-```R
-# Construct group-means design matrix across 9 condition levels
-root00_group <- factor(root00_metadata_01$group)
-root00_design <- model.matrix(~0 + root00_group)
-colnames(root00_design) <- levels(root00_group)
-
-# Dispersion estimation and GLM fitting
-root00_dge <- estimateDisp(root00_y4, root00_design)
-root00_fit <- glmFit(root00_dge, root00_design)
-
-# Contrast testing for timeline and dose gradients
-root00_contrasts <- makeContrasts(
-    D0_5p   = c5_d0 - c0_d0,
-    D30_5p  = c5_d30 - c0_d30,
-    D120_5p = c5_d120 - c0_d120,
-    D120_1p = c1_d120 - c0_d120,
-    Incubation_Signal = (c5_d120 - c5_d0) - (c0_d120 - c0_d0),
-    levels  = root00_design
-)
+# Up/down counts used for the Venn diagram
+get_sig <- function(res_obj) {
+  tab  <- as.data.frame(topTags(res_obj, n = Inf))
+  up   <- rownames(tab[tab$logFC > 1  & tab$PValue < 0.01 & tab$FDR < 0.05, ])
+  down <- rownames(tab[tab$logFC < -1 & tab$PValue < 0.01 & tab$FDR < 0.05, ])
+  return(list(up = up, down = down, all = c(up, down)))
+}
+set_A <- get_sig(res01_aging_c)   # 3 vs 1
+set_B <- get_sig(res01_p120)      # 4 vs 3
+set_C <- get_sig(res01_aging_p)   # 4 vs 2
+total_expressed <- nrow(root01_y3$counts)   # 17,560 genes
 ```
 
 ---
 
-## 3. Statistical Results & Contrast Matrix Inventory
+## 3. Results
 
-Significance was evaluated using a Benjamini-Hochberg False Discovery Rate threshold of $\text{FDR} < 0.05$ and $\vert{}\log_2\text{FC}\vert{} \ge 1.0$.
+### A. Genes at FDR < 0.05 (console output)
 
-### A. Root01 Factorial Contrast Yields ($N = 12$)
+| Contrast | Root00 (27 libraries) | Root01 (12 libraries) |
+| :--- | ---: | ---: |
+| 5% vs 0% at day 0 | 0 | 0 |
+| 5% vs 0% at day 30 | 0 | — |
+| 5% vs 0% at day 120 | 48 | 138 |
+| 1% vs 0% at day 120 | 0 | — |
+| Day 120 vs day 0 at 0% | — | 49 |
+| Day 120 vs day 0 at 5% | — | 1,240 |
+| Plastic × incubation interaction | 99 | 146 |
 
-| Contrast Identifier | Linear Mathematical Hypothesis | Biological Context | Upregulated ($n$) | Downregulated ($n$) | Total DEGs (FDR $< 0.05$) |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **Acute_Plastic** | `c5_d0 - c0_d0` | Immediate chemical/physical shock | 0 | 0 | **0** |
-| **Chronic_Plastic** | `c5_d120 - c0_d120` | Conditioned soil exposure endpoint | 89 | 49 | **138** |
-| **Aging_Control** | `c0_d120 - c0_d0` | Normal root aging in unamended soil | 31 | 18 | **49** |
-| **Aging_Plastic** | `c5_d120 - c5_d0` | Root aging under 5% microplastic stress | 612 | 628 | **1,240** |
-| **Interaction** | `(c5_d120 - c5_d0) - (c0_d120 - c0_d0)` | Non-additive Plastic $\times$ Incubation effect | 84 | 62 | **146** |
+![Number of genes per contrast (FDR < 0.05)](../assets/027_deg_contrasts_summary.png)
 
-### B. Root00 Global Contrast Yields ($N = 27$)
+### B. Up/down counts with |log2FC| > 1, P < 0.01 and FDR < 0.05 (Root01)
 
-| Contrast Identifier | Linear Mathematical Hypothesis | Biological Context | Total DEGs (FDR $< 0.05$) | Operational Assessment |
-| :--- | :--- | :--- | :--- | :--- |
-| **D0_5p** | `c5_d0 - c0_d0` | Acute 5% plastic impact | **0** | Confirms acute biological inertness |
-| **D30_5p** | `c5_d30 - c0_d30` | Intermediate 30-day incubation | **0** | Latent incubation period |
-| **D120_5p** | `c5_d120 - c0_d120` | Chronic 120-day incubation (5%) | **48** | Significant late-stage perturbation |
-| **D120_1p** | `c1_d120 - c0_d120` | Chronic 120-day incubation (1%) | **0** | Below transcriptomic activation threshold |
-| **Incubation_Signal** | `Interaction contrast` | Global multi-replicate interaction | **99** | Statistically validated interaction core |
+Conditions are numbered as in the figures: 1 = `c0_d0`, 2 = `c5_d0`, 3 = `c0_d120`, 4 = `c5_d120`.
 
----
+| Comparison | Genes | % of 17,560 | Up | Down |
+| :--- | ---: | ---: | ---: | ---: |
+| 3 vs 1 (day 120 vs day 0 at 0%) | 49 | 0.28% | 41 | 8 |
+| 4 vs 3 (5% vs 0% at day 120) | 136 | 0.77% | 43 | 93 |
+| 4 vs 2 (day 120 vs day 0 at 5%) | 1,123 | 6.40% | 540 | 583 |
 
-## 4. Visual Diagnostics & Multi-Cohort Intersections
+Overlaps (up / down):
 
-![DEG Contrasts Summary](../assets/027_deg_contrasts_summary.png)
+| Region | Genes |
+| :--- | :--- |
+| 4 vs 3 only | 12 / 17 |
+| 3 vs 1 only | 16 / 4 |
+| 4 vs 2 only | 488 / 507 |
+| 3 vs 1 and 4 vs 3 | 4 / 4 |
+| 4 vs 3 and 4 vs 2 | 30 / 73 |
+| 3 vs 1 and 4 vs 2 | 22 / 3 |
+| All three | 0 / 0 |
 
-![Root00 Static vs Incubation Venn](../assets/031_venn_root00_static_vs_incubation.png)
+![Venn diagram of the three Root01 comparisons](../assets/032_venn_root01_factorial.png)
 
-![Root01 Factorial Venn](../assets/032_venn_root01_factorial.png)
+Figure 032 was drawn outside R from the `get_sig()` output above. The numbers in it match that output.
 
-![Root00 vs Root01 Total Venn](../assets/033_venn_root00_vs_root01_total.png)
+### C. Overlap between datasets
 
----
+![Four-set Venn: Root00 and Root01, plastic (day 120) and interaction gene sets](../assets/031_venn_root00_static_vs_incubation.png)
 
-## 5. Diagnostic & Biological Interpretation
+Figure 031 compares the four FDR < 0.05 sets: Root00 5% vs 0% at day 120 (48), Root00 interaction (99), Root01 5% vs 0% at day 120 (138) and Root01 interaction (146). Together they contain 231 genes, and 27 genes are in all four sets.
 
-### A. Acute Invariance (Day 0: 0 DEGs)
-Across both the full 27-sample matrix and the 12-sample factorial core, exposure to freshly amended 5% LDPE film fragments at Day 0 yielded zero differentially expressed genes. This confirms:
-1. **Chemical Inertness:** Unweathered LDPE agricultural film does not release acute chemical phytotoxins into the rhizosphere solution.
-2. **Delayed Mechanical Impact:** Seedling roots do not experience immediate transcriptomic stress from physical fragment contact during early development. The physiological impact requires prolonged soil pre-incubation.
+![Union of significant genes, Root00 vs Root01](../assets/033_venn_root00_vs_root01_total.png)
 
-### B. Chronic Weathering Activation (Day 120: 138 DEGs)
-By Day 120, chronic exposure to 5% LDPE soil induces 138 significant DEGs in `Root01` (89 upregulated, 49 downregulated). Microplastic residues require extended soil incubation (fragmentation, microbial colonization, and moisture occlusion) to generate measurable biological stress at the root-soil interface.
-
-### C. The Aging Divergence: 49 DEGs vs. 1,240 DEGs
-Comparing the aging trajectories highlights the magnitude of the stress response:
-* **Control Aging (`c0_d120 - c0_d0`):** Normal root development in control soil involves minor transcriptional adjustments, modulating only **49 genes**.
-* **Plastic Aging (`c5_d120 - c5_d0`):** Roots grown in soil containing 5% LDPE across the same 120-day incubation window undergo extensive transcriptional remodeling, significantly altering **1,240 genes** (612 induced, 628 repressed).
-* **Biological Implication:** Microplastics disrupt the normal physiological developmental trajectory of the root system, forcing more than 25 times as many genes to shift expression to maintain basic cellular homeostasis.
-
-### D. The Factorial Interaction Core (146 DEGs)
-The Plastic $\times$ Incubation interaction model isolated **146 high-confidence DEGs**. These genes do not respond to temporal aging alone or plastic contact alone; they are driven by the specific synergy of aging in microplastic-conditioned soil. This gene set represents the core candidate pool for targeted functional annotation, oxidative stress profiling, and nutrient transport analysis.
+Figure 033 compares the union of the Root00 sets (day-120 plastic effect and interaction; 114 genes) with the union of the Root01 sets (day-120 plastic effect, interaction, and day 120 vs day 0 at 5%; 1,286 genes). 106 genes are shared, 8 are only in Root00 and 1,180 are only in Root01.
 
 ---
 
-## 6. Output Artifact Registry
+## 4. Interpretation
 
-```text
-assets/
-├── 027_deg_contrasts_summary.png              # Summary bar chart of DEG yields across Root00 and Root01
-├── 031_venn_root00_static_vs_incubation.png   # 2-way Venn: Chronic D120 vs. Incubation signal (Root00)
-├── 032_venn_root01_factorial.png              # 3-way Venn: Chronic D120 vs. Incubation vs. Aging (Root01)
-└── 033_venn_root00_vs_root01_total.png        # Comparative overlap between 27-sample and 12-sample models
-```
+* No gene differed between 5% and 0% plastic at day 0 or day 30, or between 1% and 0% plastic at day 120.
+* After 120 days of soil pre-incubation, 5% plastic changed the expression of 48 genes in the 27-library model and 138 in the 12-library model. The difference reflects the different dispersion estimates of the two models.
+* Comparing day 120 with day 0, 1,240 genes changed in 5% soil and 49 in 0% soil. The interaction contrast, which tests this difference formally, gave 146 genes (Root01) and 99 genes (Root00).
+* These lists come from LRTs with three replicates per condition and have not been validated by another method.
 
----
-
-## 7. Pipeline Status
-
-Factorial contrast testing is complete. The 146 Plastic $\times$ Time interaction DEGs and the 1,240 plastic-aging genes are extracted. The pipeline now advances to Volcano plot generation and hierarchical clustering of the interaction core (`03_plotting_interaction_20260413.R`).
+Next step: volcano plot and heatmap of the interaction genes (`modules/03_interaction_visualization.R`).

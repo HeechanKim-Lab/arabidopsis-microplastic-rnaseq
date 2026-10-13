@@ -1,227 +1,188 @@
-# Arabidopsis Root Transcriptome Pipeline (Microplastic Stress)
-Dry-lab computational log and statistical modeling pipeline for profiling transcriptional alterations in *Arabidopsis thaliana* exposed to low-density polyethylene (LDPE) plastic residues across acute and chronic soil incubation regimes.
+# Arabidopsis Root RNA-seq: LDPE Plastic Residues in Soil
+
+RNA-seq analysis of *Arabidopsis thaliana* (Col-0) roots grown in soil containing low-density polyethylene (LDPE) plastic residues. The repository has two parts: a six-library pilot processed from FASTQ files (HISAT2 → StringTie → edgeR), and a 27-library factorial experiment analysed in edgeR from a gene count matrix.
 
 ---
 
-## 1. Project Background & Biological Context
+## 1. Overview
 
-Agricultural mulching films composed of low-density polyethylene (LDPE) fragment into macroscopic plastic residues (PRs, $\ge 5$ mm) and microplastics in arable topsoil. While macroscopic seedling phenotypes (fresh weight, survival rate, flowering time) exhibit high homeostatic buffering against chemically inert LDPE fragments, significant transcriptional perturbation occurs at the root-soil interface.
+LDPE mulching film breaks down into plastic residues (PRs) in agricultural soil. In this system, LDPE residues had little visible effect on seedling fresh weight, survival or flowering time. This project asks whether root gene expression changes with the amount of plastic in the soil (0, 1 or 5% w/w) and with how long the plastic-amended soil was incubated before planting (0, 30 or 120 days).
 
-Physical sonication of roots to isolate tightly adhering rhizosphere soil introduces substantial within-group technical variance. Standard negative binomial Generalized Linear Model (GLM) pipelines utilizing Quasi-Likelihood F-tests (QLF) become overly conservative under sonication-induced dispersion, collapsing statistical power and yielding zero significant differentially expressed genes (DEGs). This pipeline implements a calibrated **Likelihood Ratio Test (LRT)** framework, recovering the authentic transcriptomic stress response across plastic dosage and incubation timelines.
-
-```text
-Experimental Design Schema:
-Silty Loam Agricultural Soil + 0%, 1%, 5% (w/w) LDPE Residues (≥ 5 mm)
-      │
-      ├── Controlled Dark Incubation (25°C, 80% RH) for 0 d, 30 d, 120 d
-      │
-      ▼
-Transplantation of 7-day-old Arabidopsis thaliana (Col-0) Seedlings
-      │
-      ├── Cultivation: 21–28 days in environmental growth chambers
-      │
-      ▼
-Sampling & Computational Modularity:
-├── 01_pilot_analysis   : Diagnostic benchmark on isolated subset (LRT proof-of-concept)
-└── 02_full_experiment  : Full multi-factorial series (Root00: N=27 global; Root01: N=12 core)
-```
+**Prior work:** [Lee et al. (2025), *Journal of Experimental Botany* 76: 7003–7025](https://academic.oup.com/jxb/article/76/22/7003/8213809) describes this soil and plastic system and its effects on plant growth, the rhizosphere bacterial community and the leaf transcriptome.
 
 ---
 
-## 2. Two-Stage Computational Architecture
+## 2. Experimental design
 
-To resolve the high dispersion introduced during root tissue harvesting, the project was organized into two sequential analytical stages:
+* **Plant:** *Arabidopsis thaliana* Col-0.
+* **Soil:** silty loam agricultural soil with 1% perlite, kept at 70% water-holding capacity.
+* **Plastic:** LDPE mulching film cut into pieces of ≥ 5 mm and surface-sterilised with UV-C; 0, 1 or 5% (w/w).
+* **Soil pre-incubation:** 0, 30 or 120 days in the dark at 25 °C and 80% relative humidity.
+* **Growth:** 7-day-old seedlings were transplanted and grown for 21–28 days in growth chambers. Roots were sonicated to separate tightly adhering rhizosphere soil.
+* **Replication:** 3 biological replicates per condition.
 
-### Stage 1: Diagnostic Calibration (`01_pilot_analysis`)
-Initial evaluations of root tissue under standard QLF pipelines failed to detect meaningful biological expression changes (yielding 0–1 significant DEGs), suggesting either biological inertness or severe variance inflation. To diagnose this without confounding multi-factorial variables, an isolated 6-sample subset (3 WT vs. 3 Conditioned replicates at 120 days) was allocated as a pilot benchmark. 
-* Identified sample `R1-1_WT` as an extreme variance outlier driving PC2 dispersion (18% variance).
-* Demonstrated that algorithmic dispersion downweighting (`robust = TRUE`) and sample over-trimming ($N = 4, df = 2$) fail under sonication noise.
-* Transitioned from QLF to a calibrated Likelihood Ratio Test (LRT) with outlier excision, unmasking **865 high-confidence DEGs** (FDR $< 0.05$, $\vert{}\log_2\text{FC}\vert{} > 1$). This proved that the conditioning response was biologically intact.
+| Condition | Plastic | Pre-incubation | Libraries |
+| :--- | :--- | :--- | :--- |
+| R1 (`c0_d0`) | 0% | 0 d | R1-1, R1-2, R1-3 |
+| R2 (`c1_d0`) | 1% | 0 d | R2-1, R2-2, R2-3 |
+| R3 (`c5_d0`) | 5% | 0 d | R3-1, R3-2, R3-3 |
+| R4 (`c0_d30`) | 0% | 30 d | R4-1, R4-2, R4-3 |
+| R5 (`c1_d30`) | 1% | 30 d | R5-1, R5-2, R5-3 |
+| R6 (`c5_d30`) | 5% | 30 d | R6-1, R6-2, R6-3 |
+| R7 (`c0_d120`) | 0% | 120 d | R7-1, R7-2, R7-3 |
+| R8 (`c1_d120`) | 1% | 120 d | R8-1, R8-2, R8-3 |
+| R9 (`c5_d120`) | 5% | 120 d | R9-1, R9-2, R9-3 |
 
-### Stage 2: Production Scaling (`02_full_experiment`)
-With statistical viability confirmed, the LRT modeling framework was deployed across the complete experimental series:
-* **`Root00` (Global Landscape, $N = 27$):** Screened across 3 plastic concentrations ($0\%, 1\%, 5\%$) and 3 incubation intervals ($0\text{d}, 30\text{d}, 120\text{d}$) to characterize global variance and dose sensitivity.
-* **`Root01` (Factorial Core, $N = 12$):** Modeled the 4 extreme condition endpoints (`c0_d0`, `c5_d0`, `c0_d120`, `c5_d120`) to parameterize chronological aging, plastic-accelerated aging (1,240 DEGs), and the non-additive Plastic $\times$ Time interaction (146 DEGs).
+Datasets analysed:
 
----
-
-## 3. Experimental Setup & Cohort Specifications
-
-* **Host Plant:** *Arabidopsis thaliana* L. ecotype Columbia-0 (Col-0)
-* **Base Substrate:** Silty loam agricultural field soil mixed with 1% perlite (maintained at 70% water-holding capacity)
-* **Contaminant:** Low-density polyethylene (LDPE) agricultural mulching film pulverized to $\ge 5$ mm, UV-C surface-sterilized
-* **Treatment Variables:**
-  * **Plastic Residue (PR) Concentration:** 0% (Control), 1%, and 5% $(w/w)$
-  * **Soil Pre-incubation Duration:** 0 days, 30 days, and 120 days at 25°C, 80% RH
-* **Analyzed Cohorts:**
-  * **Pilot Dataset (`01_pilot_analysis`):** $N = 6$ root libraries (3 WT vs. 3 Conditioned replicates; `R1-1_WT` diagnosed and excluded as an outlier).
-  * **Full Dataset (`02_full_experiment`):**
-    * `Root00` (Global Matrix): $N = 27$ libraries covering 9 conditions $\times$ 3 biological replicates across 0d, 30d, and 120d.
-    * `Root01` (Characteristic Subset): $N = 12$ libraries isolating the primary factorial endpoints (`c0_d0`, `c5_d0`, `c0_d120`, `c5_d120`).
+* **Pilot (`01_pilot_analysis`):** 6 libraries. WT: `R1-1_WT`, `R2-1_WT`, `R3-1_WT` (0% plastic control). Cond: `R1-9_Cond`, `R2-9_Cond`, `R3-9_Cond` (5% plastic, 120-day pre-incubated soil).
+* **Root00 (`02_full_experiment`):** all 27 libraries.
+* **Root01 (`02_full_experiment`):** the 12 libraries of conditions R1, R3, R7 and R9 (0 or 5% plastic × 0 or 120 days). In figures these are labelled Conditions 1–4.
 
 ---
 
-## 4. Sequencing Metadata & Library Architecture
+## 3. Data
 
-* **Platform:** Illumina NovaSeq 6000
-* **Configuration:** Paired-End (PE), $2 \times 100$ bp
-* **Library Chemistry:** TruSeq Stranded mRNA Prep Kit (poly-A selection)
-* **Reference Genome:** *Arabidopsis thaliana* TAIR10 (Ensembl Plants release)
-
-### Replicate Architecture
-
-```text
-Pilot Replicates:
-├── R1-1_WT, R2-1_WT, R3-1_WT       : 0% Plastic Control roots
-└── R1-9_Cond, R2-9_Cond, R3-9_Cond : 5% Plastic Conditioned roots (120d)
-
-Core Factorial Design (Root01 Subset):
-├── c0_d0   (R1-1, R1-2, R1-3) : 0% Plastic, 0-Day incubation (Baseline Control)
-├── c5_d0   (R3-1, R3-2, R3-3) : 5% Plastic, 0-Day incubation (Acute Exposure)
-├── c0_d120 (R7-1, R7-2, R7-3) : 0% Plastic, 120-Day incubation (Aging Control)
-└── c5_d120 (R9-1, R9-2, R9-3) : 5% Plastic, 120-Day incubation (Chronic Conditioned)
-```
+* **Sequencing:** Illumina NovaSeq 6000, paired-end 2 × 100 bp, TruSeq Stranded mRNA (poly-A selection).
+* **Pilot:** paired-end FASTQ files, 29.1–30.3 million read pairs per library. Not included in this repository.
+* **Full experiment:** a gene-level count matrix for the 27 libraries (TAIR gene IDs) and the R objects derived from it (`Arabidopsis_plastics_2023.RData`) were provided by the lab. The upstream processing of these 27 libraries is not part of this repository.
+* **Annotation table:** `Arabidopsis_genes_description.xlsx` (gene symbols and descriptions; lab file).
 
 ---
 
-## 5. Repository Structure
+## 4. Methods
 
-The repository maintains an identical architecture across both modules, bifurcated into monolithic drivers (`pipeline/`) and step-by-step unit scripts (`modules/`):
+### Pilot (`01_pilot_analysis`)
 
-```text
-.
-├── README.md
-├── session_info.txt
-├── 01_pilot_analysis/
-│   ├── assets/       # Standardized diagnostic assets (001_pilot_qc_pca.png to 013_pilot_kegg_pathways_down.png)
-│   ├── logs/         # Markdown logs for upstream Tuxedo and edgeR calibration (2026-03-10 to 2026-04-11)
-│   ├── pipeline/     # Monolithic production drivers (run_upstream_tuxedo.sh, run_downstream_pilot.R)
-│   └── modules/      # Step-wise reproducible scripts (01_reference_and_index.sh to 11_functional_enrichment.R)
-└── 02_full_experiment/
-    ├── assets/       # Publication figures (020_root00_full_matrix_pca.png to 040_targeted_photosynthesis_heatmap.png)
-    ├── logs/         # Markdown logs for 27-sample matrix and 12-sample subset (2026-04-11 to 2026-04-17)
-    ├── pipeline/     # Monolithic production driver (run_full_experiment.R)
-    └── modules/      # Step-wise analytical scripts (01_full_matrix_and_subset_pca.R to 07_master_annotation_registry.R)
-```
+1. **Reference:** TAIR10 genome (Ensembl Plants FASTA; chromosome names changed to `Chr1`–`Chr5`, `ChrM`, `ChrC`) and `TAIR10_GFF3_genes.gff`, converted to GTF with `gffread`.
+2. **Alignment:** `hisat2 --dta`.
+3. **Assembly:** `samtools sort`, StringTie per library (`-G`), `stringtie --merge`, and `gffcompare` against TAIR10.
+4. **Quantification:** `stringtie -e -B` against the merged GTF; gene counts with `prepDE.py3` (32,540 genes); TPM computed from FPKM.
+5. **Filtering and normalisation:** `filterByExpr` (20,971 genes kept) and TMM in edgeR. PCA on log-CPM values (prior count 2, `prcomp` without scaling).
+6. **Differential expression:** edgeR quasi-likelihood F-tests (QLF) and likelihood ratio tests (LRT); see Key results.
+7. **Enrichment:** StringTie gene IDs were mapped to TAIR IDs using `t_data.ctab`. GO enrichment used `enrichGO` (org.At.tair.db; BP, MF and CC). KEGG enrichment used `enrichKEGG` (organism `ath`, TAIR IDs).
 
----
+### Full experiment (`02_full_experiment`)
 
-## 6. Computational Workflow
+1. **Input objects (from the lab):** `filterByExpr` and TMM normalisation per dataset, design `~0 + group`, dispersions from `estimateDisp`. Root01 retains 17,560 genes.
+2. **PCA:** `prcomp` on TMM log-CPM values (centred and scaled).
+3. **Differential expression:** edgeR GLM likelihood ratio tests (`glmFit`, `glmLRT`) with the contrasts listed below.
+4. **Gene sets:** up and down counts used |log2FC| > 1, P < 0.01 and FDR < 0.05.
+5. **Enrichment:** GO for the 146 interaction genes and the 1,240 genes of the 5% day-120 vs day-0 contrast; KEGG pathway membership for the 146 interaction genes.
+6. **Multivariate tests (Root01):** PERMANOVA (`vegan::adonis2`, Euclidean distance on TMM log-CPM, Day × Plastic, 999 permutations, terms added sequentially) and two-way ANOVA (Day × Plastic) on PC1–PC3 scores. Tukey letters in the boxplots come from a one-way ANOVA across the four conditions.
+7. **Targeted heatmaps:** genes significant (FDR < 0.05) in any of three Root01 contrasts whose annotation matched oxidative-stress or photosynthesis/plastid keywords.
 
-```text
-                          Raw FASTQ Reads (NovaSeq PE)
-                                       │
-                    01. HISAT2 Alignment (--dta, TAIR10)
-                                       │
-                    02. Samtools Coordinate Sorting (BAM)
-                                       │
-                    03. StringTie Transcript Assembly (-G)
-                                       │
-                    04. Transcriptome Merge (at_merged.gtf)
-                                       │
-                    05. StringTie Abundance Estimation (-e -B)
-                                       │
-          ┌────────────────────────────┴────────────────────────────┐
-          ▼                                                         ▼
-prepDE.py3 (Gene Count Matrix)                             ballgown/t_data.ctab
-          │                                                         │
-          ▼                                                         ▼
-edgeR DGEList Initialization                               FPKM to TPM Conversion
-          │                                                         │
-          ├────────────────────────────┬────────────────────────────┘
-          ▼                            ▼
-[01 Pilot Diagnostic Engine]     [02 Full Experiment Engine]
-├── filterByExpr & TMM           ├── 27-Sample Variance Screening
-├── PCA QC (R1-1_WT Outlier)     ├── Root01 Factorial Contrasts
-├── QLF vs. LRT Benchmark        ├── GLM LRT Model (Interaction)
-└── MSTRG-to-TAIR GO/KEGG        ├── PERMANOVA & 2-Way ANOVA
-                                 └── ROS & Photosynthesis Heatmaps
-```
+| Contrast | Definition |
+| :--- | :--- |
+| 5% vs 0% at day 0 | `c5_d0 - c0_d0` |
+| 5% vs 0% at day 30 (Root00 only) | `c5_d30 - c0_d30` |
+| 5% vs 0% at day 120 | `c5_d120 - c0_d120` |
+| 1% vs 0% at day 120 (Root00 only) | `c1_d120 - c0_d120` |
+| Day 120 vs day 0 at 0% (Root01) | `c0_d120 - c0_d0` |
+| Day 120 vs day 0 at 5% (Root01) | `c5_d120 - c5_d0` |
+| Plastic × incubation interaction | `(c5_d120 - c5_d0) - (c0_d120 - c0_d0)` |
 
 ---
 
-### Step-by-Step Processing Strategy
+## 5. Key results
 
-#### 1. Upstream Read Mapping & Assembly
-* Paired-end reads are mapped to the TAIR10 genome assembly using `hisat2` (v2.2.2) with `--dta` enabled to supply splice-site information downstream.
-* Alignments are coordinate-sorted via `samtools` (v1.22.1) and individual transcript models are assembled using `stringtie` (v3.0.3).
-* Sample GTF models are merged into a non-redundant master transcriptome (`at_merged.gtf`) via `stringtie --merge` and evaluated for novel transcript structures against TAIR10 using `gffcompare` (v0.12.10).
+### Pilot
 
-#### 2. Transcript Quantification & Normalization
-* Sample-level transcript abundances are extracted using `stringtie -e -B` against the master GTF.
-* Raw gene-level read count matrices are compiled using `prepDE.py3` for generalized linear modeling in `edgeR`.
-* Ballgown FPKM abundance estimates are converted to Transcripts Per Million (TPM) using the linear transformation:
-  $$TPM_i = \left( \frac{FPKM_i}{\sum FPKM_{\text{sample}}} \right) \times 10^6$$
-  retaining transcript identity (`t_name`) to eliminate library size bias during cross-replicate expression scaling.
+| Samples | Test | Genes tested | FDR < 0.05 |
+| :--- | :--- | ---: | :--- |
+| 6 | QLF | 20,971 | 1 |
+| 6 | QLF, `robust = TRUE` | 20,971 | 1 |
+| 5 (`R1-1_WT` removed) | QLF | 21,280 | 12 |
+| 4 (`R1-1_WT` and `R3-9_Cond` removed) | QLF | 21,132 | 0 |
+| 6 | LRT | 20,971 | 932; 865 with \|log2FC\| > 1 |
 
-#### 3. Pilot Diagnostics & LRT Calibration (`01_pilot_analysis`)
-* Unsupervised PCA on TMM log-CPM values identified sample `R1-1_WT` as an extreme variance outlier along PC2 (18% variance).
-* Fitting a standard Quasi-Likelihood F-test (`glmQLFTest`) on all 6 replicates collapsed statistical sensitivity to only 1 significant DEG (FDR $< 0.05$).
-* Removing `R1-1_WT` and switching from QLF to the **Likelihood Ratio Test (`glmLRT`)** resolved technical dispersion, extracting **865 significant DEGs** (FDR $< 0.05$, $\vert{}\log_2\text{FC}\vert{} > 1$).
+* The 865-gene LRT list (all six libraries) was used for the volcano plot, the heatmap and the GO/KEGG analysis. With three libraries per group, the LRT is less conservative than the QLF test because it does not account for uncertainty in the dispersion estimates, so this list is exploratory.
+* `R1-1_WT` had the lowest alignment rate (88.56%; others 90.88–93.78%) and was separated from the other five libraries along PC1 (49% of variance). It was kept in the LRT model.
+* edgeR used `Cond` as the reference level, so a positive log2FC means higher expression in WT. In the GO/KEGG figures, "UP" refers to genes higher in WT and "DOWN" to genes higher in Cond.
+* Genes higher in Cond were enriched for cell wall organisation, root hair and root epidermal cell differentiation, peroxidase activity and phenylpropanoid biosynthesis. Genes higher in WT were enriched for responses to nutrient levels, starvation and hypoxia, and for amino-acid catabolism.
 
-#### 4. Factorial GLM Contrasts & Multivariate Inference (`02_full_experiment`)
-* **Dose-Response Verification:** PCA of the characteristic 12-sample cohort (`Root01`) confirmed an uncorrupted biological gradient across PC1 (29.7% variance), separating samples cleanly along 0% $\rightarrow$ 1% $\rightarrow$ 5% plastic.
-* **Factorial GLM Contrasts:** Structured contrast vectors under `edgeR`:
-  * *Acute Plastic Effect (D0):* `c5_d0 - c0_d0`
-  * *Chronic Plastic Effect (D120):* `c5_d120 - c0_d120`
-  * *Control Aging Effect:* `c0_d120 - c0_d0`
-  * *Plastic Aging Effect:* `c5_d120 - c5_d0`
-  * *Plastic $\times$ Time Interaction:* `(c5_d120 - c5_d0) - (c0_d120 - c0_d0)`
-* **Multivariate Hypothesis Testing:**
-  * Non-parametric multivariate ANOVA (`vegan::adonis2`) evaluating variance partitioning across Treatment, Incubation, and their interaction.
-  * Two-way ANOVA with post-hoc Tukey HSD tests (`multcompView`) on PC1, PC2, and PC3 scores to determine axis-specific significance.
-* **Targeted Physiological Modules:** Targeted hierarchical heatmaps on critical response pathways:
-  * Repression of photosynthesis and light-reaction machinery (`CAO`, `PSB27`).
-  * Activation of reactive oxygen species (ROS) scavengers and oxidative stress mediators (`APX1`, class III peroxidases).
-  * Perturbation of anion transmembrane transport and starch catabolism (`CT-BMY`).
+### Full experiment (LRT, FDR < 0.05)
+
+| Contrast | Root00 (27 libraries) | Root01 (12 libraries) |
+| :--- | ---: | ---: |
+| 5% vs 0% at day 0 | 0 | 0 |
+| 5% vs 0% at day 30 | 0 | — |
+| 5% vs 0% at day 120 | 48 | 138 |
+| 1% vs 0% at day 120 | 0 | — |
+| Day 120 vs day 0 at 0% | — | 49 |
+| Day 120 vs day 0 at 5% | — | 1,240 |
+| Plastic × incubation interaction | 99 | 146 |
+
+* With |log2FC| > 1, P < 0.01 and FDR < 0.05 (Root01):
+  * 5% vs 0% at day 120: 136 genes (43 up, 93 down).
+  * Day 120 vs day 0 at 0%: 49 genes (41 up, 8 down).
+  * Day 120 vs day 0 at 5%: 1,123 genes (540 up, 583 down).
+* The same 5% vs 0% day-120 contrast gives 48 genes in the 27-library model and 138 in the 12-library model, because the dispersions are estimated from different sets of libraries.
+* PERMANOVA (Root01): Day R² = 0.195, p = 0.010; Plastic R² = 0.057, p = 0.722; Day × Plastic R² = 0.108, p = 0.184.
+* Two-way ANOVA on PC1–PC3 scores: no term reached p < 0.05 (smallest: Day on PC1, p = 0.069).
+* In summary, soil pre-incubation time had the larger effect on root expression. A plastic effect was detected only after 120 days of pre-incubation, and the day-120 vs day-0 difference involved more genes in 5% soil (1,240) than in 0% soil (49).
 
 ---
 
-## 7. Execution Protocol
+## 6. Limitations
 
-### A. End-to-End Pipeline Drivers
-Execute the monolithic drivers to reproduce the complete analysis:
+* Three biological replicates per condition. All reported gene lists come from LRTs, which are less conservative than QLF tests at this sample size. No result has been validated by an independent method.
+* The legends of PCA figures 020–022 label the colours as plastic levels, but the colours show the pre-incubation time (see the 2026-04-11 full-experiment log).
+* The figures were produced in interactive R sessions, and the logs record that code. The scripts in `modules/` and `pipeline/` were reorganised afterwards and have not been re-run end to end. Known differences:
+  * the pilot PCA scripts use `scale. = TRUE`, but the figure used unscaled data;
+  * the pilot LRT scripts drop `R1-1_WT`, but the reported list used all six libraries;
+  * the pilot KEGG scripts use Entrez IDs, but the analysis used TAIR IDs;
+  * full-experiment modules 04 and 05 contain lines that do not parse;
+  * module 06 writes different file names from the committed figures.
+
+---
+
+## 7. How to run
 
 ```bash
-# 01 Pilot Analysis
+# Pilot
 cd 01_pilot_analysis
-./pipeline/run_upstream_tuxedo.sh
+./pipeline/run_upstream_tuxedo.sh      # bash >= 4; uses BSD sed (macOS)
 Rscript pipeline/run_downstream_pilot.R
 
-# 02 Full Experiment Analysis
+# Full experiment (needs Arabidopsis_plastics_2023.RData and Arabidopsis_genes_description.xlsx)
 cd ../02_full_experiment
 Rscript pipeline/run_full_experiment.R
 ```
 
-### B. Modular Execution
-Individual steps can be executed independently using the scripts located in `01_pilot_analysis/modules/` and `02_full_experiment/modules/`. Intermediate states are automatically saved and loaded via `results/intermediate/*.rds`.
+Each step can also be run on its own from `modules/`. Intermediate objects are saved to and read from `results/intermediate/*.rds`. See Limitations before using the scripts to reproduce the figures.
 
 ---
 
-## 8. Software Dependencies & Computing Environments
+## 8. Repository layout
 
-Upstream sequence processing was performed in an isolated Conda environment (`lab_intel`), while downstream statistical modeling and graphical evaluations were conducted within an R session.
-
-### Upstream Processing Environment (`lab_intel`)
-* **Operating System:** macOS (Darwin `aarch64` / `x86_64`)
-* **HISAT2:** v2.2.2
-* **StringTie:** v3.0.3
-* **Samtools:** v1.22.1
-* **GFFCompare:** v0.12.10
-* **Python Runtime:** Python 3 (with `pandas` for matrix summaries)
-
-### Statistical Modeling & Graphics Environment (R Session)
-* **Base Platform:** R (v4.4.0)
-* **Core Packages:** `edgeR` (v4.4.0), `clusterProfiler` (v4.13.3), `org.At.tair.db` (v3.19.1), `vegan` (v2.6-6.1)
-* **Visualization:** `pheatmap` (v1.0.12), `ggplot2` (v3.5.1+), `multcompView` (v0.1-10), `ggrepel`, `plotly`
+```text
+.
+├── README.md
+├── 01_pilot_analysis/
+│   ├── assets/     # figures 001–013
+│   ├── logs/       # analysis logs, 2026-03-10 to 2026-04-11
+│   ├── modules/    # 01_reference_and_index.sh … 11_functional_enrichment.R
+│   └── pipeline/   # run_upstream_tuxedo.sh, run_downstream_pilot.R
+└── 02_full_experiment/
+    ├── assets/     # figures 020–040
+    ├── logs/       # analysis logs, 2026-04-11 to 2026-04-17
+    ├── modules/    # 01_full_matrix_and_subset_pca.R … 07_master_annotation_registry.R
+    └── pipeline/   # run_full_experiment.R
+```
 
 ---
 
-## 9. Genomic References & Annotations
+## 9. Software
 
-* **Arabidopsis Reference Genome:** TAIR10 assembly (`Arabidopsis_thaliana.TAIR10.dna.toplevel.fa`)
-* **Annotation Sets:**
-  * Primary Annotation: `TAIR10_GFF3_genes.gff` converted to `TAIR10_GFF3_genes.gtf` via `gffread`
-  * Functional Dictionary: Curated locus symbol and descriptive table (`Arabidopsis_genes_description.xlsx`)
-* **Organism Database:** `org.At.tair.db` (Bioconductor)
-* **Organism KEGG Identifier:** `ath` (*Arabidopsis thaliana*)
+* **Upstream (conda environment `lab_intel`, macOS):** HISAT2 v2.2.2, StringTie v3.0.3, samtools v1.22.1, gffcompare v0.12.10, gffread, Python 3 with pandas.
+* **R:** R v4.4.0; edgeR v4.4.0, clusterProfiler v4.13.3, org.At.tair.db v3.19.1, vegan v2.6-6.1, pheatmap v1.0.12, ggplot2 v3.5.1, multcompView v0.1-10, EnhancedVolcano, ggvenn, plotly, readxl, dplyr, reshape2.
+
+---
+
+## 10. References and annotation
+
+* **Genome:** TAIR10 (`Arabidopsis_thaliana.TAIR10.dna.toplevel.fa`, Ensembl Plants).
+* **Annotation:** `TAIR10_GFF3_genes.gff`, converted to `TAIR10_GFF3_genes.gtf` with `gffread`.
+* **Gene descriptions:** `Arabidopsis_genes_description.xlsx`.
+* **Databases:** `org.At.tair.db` (Bioconductor); KEGG organism code `ath`.
